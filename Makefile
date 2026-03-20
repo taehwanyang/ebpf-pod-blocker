@@ -1,0 +1,21 @@
+BINARY_NAME = pod_blocker
+GENERATED_FILES = connection_counter_bpfel.go connection_counter_bpfeb.go connection_counter_bpfel.o connection_counter_bpfeb.o
+
+.PHONY: generate build clean run help
+
+generate: ## Generate Go code from eBPF C source
+	go generate ./...
+
+build: generate ##  Generate eBPF code and build Go binary
+	go build -buildvcs=false -o $(BINARY_NAME) .
+
+run: build ##  Run the autoscaler program
+	./$(BINARY_NAME)
+
+clean: ## Remove generated files and binary
+	rm -f $(BINARY_NAME)
+	rm -f $(GENERATED_FILES)
+
+help: ## Show this help message
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
+		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
