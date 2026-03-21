@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: auth-attacker
+  namespace: attack
+  labels:
+    app: auth-attacker
+spec:
+  restartPolicy: Never
+  containers:
+    - name: auth-attacker
+      image: ythwork/auth-attacker:0.0.1
+      imagePullPolicy: IfNotPresent

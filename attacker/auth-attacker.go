@@ -76,7 +76,7 @@ func worker(
 }
 
 func sendRequest(client *http.Client) error {
-	tokenURL := "http://auth.ythwork.com/oauth2/token"
+	tokenURL := "http://authentication-server/oauth2/token"
 
 	form := url.Values{}
 	form.Set("grant_type", "urn:ietf:params:oauth:grant-type:password")
