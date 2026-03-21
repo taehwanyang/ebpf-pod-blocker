@@ -67,8 +67,8 @@ func WatchPodTrafficAndBlockPodOnDetection(ctx context.Context) error {
 	agent.tcClient = tcClient
 	defer agent.tcClient.Close()
 
-	if err := ensureClsact(agent.tcClient, agent.ifIndex); err != nil {
-		return fmt.Errorf("ensure clsact on %s: %w", agent.ifName, err)
+	if err := resetClsact(agent.tcClient, agent.ifIndex); err != nil {
+		return fmt.Errorf("reset clsact on %s: %w", agent.ifName, err)
 	}
 
 	if err := agent.applyRateLimitConfig(Window, MaxCount); err != nil {
@@ -195,6 +195,30 @@ func ensureClsact(tcnl *tc.Tc, ifindex uint32) error {
 	}
 
 	return err
+}
+
+func resetClsact(tcnl *tc.Tc, ifindex uint32) error {
+	qdisc := tc.Object{
+		Msg: tc.Msg{
+			Family:  unix.AF_UNSPEC,
+			Ifindex: ifindex,
+			Handle:  core.BuildHandle(tc.HandleRoot, 0),
+			Parent:  tc.HandleIngress,
+		},
+		Attribute: tc.Attribute{
+			Kind: "clsact",
+		},
+	}
+
+	if err := tcnl.Qdisc().Delete(&qdisc); err != nil && !errors.Is(err, unix.ENOENT) {
+		return fmt.Errorf("delete clsact: %w", err)
+	}
+
+	if err := tcnl.Qdisc().Add(&qdisc); err != nil && !errors.Is(err, unix.EEXIST) {
+		return fmt.Errorf("add clsact: %w", err)
+	}
+
+	return nil
 }
 
 func attachBPFProgram(tcnl *tc.Tc, ifindex uint32, progFD int, progName string, handle uint32) error {

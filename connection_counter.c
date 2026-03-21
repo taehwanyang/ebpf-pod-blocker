@@ -158,10 +158,20 @@ int count_syn_and_drop(struct __sk_buff *skb)
         return TC_ACT_OK;
     }
 
-    enabled = bpf_map_lookup_elem(&watch_dst_ips, &ip->daddr);
+    bpf_printk("syn seen daddr=%x saddr=%x\n", bpf_ntohl(ip->daddr), bpf_ntohl(ip->saddr));
+
+    __u32 dst_ip = bpf_ntohl(ip->daddr);
+    __u32 src_ip = bpf_ntohl(ip->saddr);
+    enabled = bpf_map_lookup_elem(&watch_dst_ips, &dst_ip);
     if (!enabled) {
+        bpf_printk("watch miss daddr=%x\n", ip->daddr);
         return TC_ACT_OK;
     }
+
+    pair_key.target_ip = dst_ip;
+    pair_key.src_ip = src_ip;
+
+    bpf_printk("watch hit daddr=%x\n", dst_ip);
 
     cfg = bpf_map_lookup_elem(&config_map, &cfg_key);
     if (!cfg) {
@@ -171,9 +181,6 @@ int count_syn_and_drop(struct __sk_buff *skb)
     if (cfg->window_ns == 0 || cfg->max_count == 0) {
         return TC_ACT_OK;
     }
-
-    pair_key.target_ip = ip->daddr;
-    pair_key.src_ip = ip->saddr;
 
     state = bpf_map_lookup_elem(&target_src_states, &pair_key);
     if (!state) {
@@ -206,11 +213,18 @@ int count_syn_and_drop(struct __sk_buff *skb)
 
         bpf_spin_unlock(&state->lock);
 
+        bpf_printk("drop target=%x src=%x count=%u\n",
+               target_ip, src_ip, current_count);
+
         emit_drop_event(now_ns, target_ip, src_ip, current_count, max_count);
         return TC_ACT_SHOT;
     }
 
     bpf_spin_unlock(&state->lock);
+
+    bpf_printk("pass target=%x src=%x count=%u\n",
+               pair_key.target_ip, pair_key.src_ip, state->count);
+
     return TC_ACT_OK;
 }
 

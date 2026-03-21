@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	totalRequests = 1000
+	totalRequests = 100000
 	workerCount   = 50
 )
 
@@ -24,8 +24,13 @@ func main() {
 	var success int64
 	var failure int64
 
+	transport := &http.Transport{
+		DisableKeepAlives: true,
+	}
+
 	client := &http.Client{
-		Timeout: 5 * time.Second,
+		Timeout:   5 * time.Second,
+		Transport: transport,
 	}
 
 	var wg sync.WaitGroup
@@ -62,21 +67,23 @@ func worker(
 ) {
 	defer wg.Done()
 
-	for jobId := range jobs {
-		log.Printf("processing request #%d\n", jobId)
+	for jobID := range jobs {
+		log.Printf("processing request #%d", jobID)
+
 		err := sendRequest(client)
 		if err != nil {
 			atomic.AddInt64(failure, 1)
-			log.Printf("request #%d FAILED\n", jobId)
+			log.Printf("request #%d FAILED: %v", jobID, err)
 			continue
 		}
+
 		atomic.AddInt64(success, 1)
-		log.Printf("request #%d SUCCEEDED\n", jobId)
+		log.Printf("request #%d SUCCEEDED", jobID)
 	}
 }
 
 func sendRequest(client *http.Client) error {
-	tokenURL := "http://authentication-server/oauth2/token"
+	tokenURL := "http://auth-test-authorization-server.auth.svc.cluster.local/oauth2/token"
 
 	form := url.Values{}
 	form.Set("grant_type", "urn:ietf:params:oauth:grant-type:password")
@@ -89,6 +96,8 @@ func sendRequest(client *http.Client) error {
 		return err
 	}
 
+	req.Close = true
+	req.Header.Set("Connection", "close")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	basicAuth := base64.StdEncoding.EncodeToString([]byte("client:secret"))
@@ -100,12 +109,14 @@ func sendRequest(client *http.Client) error {
 	}
 	defer resp.Body.Close()
 
+	time.Sleep(500 * time.Millisecond)
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err
 	}
 
-	log.Printf("status=%d body=%s\n", resp.StatusCode, string(body))
+	log.Printf("status=%d body=%s", resp.StatusCode, string(body))
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return nil

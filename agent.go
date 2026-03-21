@@ -1,7 +1,10 @@
 package main
 
 import (
+	"encoding/binary"
 	"fmt"
+	"log"
+	"net"
 	"time"
 
 	"github.com/florianl/go-tc"
@@ -37,6 +40,7 @@ func (a *Agent) setWatchIPs(ipStrs []string) error {
 		if err != nil {
 			return fmt.Errorf("invalid pod ip %q: %w", s, err)
 		}
+		log.Printf("watch ip=%s key=0x%08x", s, ipU32)
 		newSet[ipU32] = struct{}{}
 	}
 
@@ -49,4 +53,22 @@ func (a *Agent) setWatchIPs(ipStrs []string) error {
 
 	a.watchSet = newSet
 	return nil
+}
+
+func ipToU32(ipStr string) (uint32, error) {
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return 0, fmt.Errorf("invalid IP: %s", ipStr)
+	}
+	ip4 := ip.To4()
+	if ip4 == nil {
+		return 0, fmt.Errorf("not IPv4: %s", ipStr)
+	}
+	return binary.BigEndian.Uint32(ip4), nil
+}
+
+func u32ToIP(v uint32) string {
+	var b [4]byte
+	binary.BigEndian.PutUint32(b[:], v)
+	return net.IP(b[:]).String()
 }
