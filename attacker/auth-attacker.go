@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	totalRequests = 10000
+	totalRequests = 1000
 	workerCount   = 50
 )
 
@@ -76,7 +76,7 @@ func worker(
 }
 
 func sendRequest(client *http.Client) error {
-	tokenURL := "http://authorization-server/oauth2/token"
+	tokenURL := "http://auth.ythwork.com/oauth2/token"
 
 	form := url.Values{}
 	form.Set("grant_type", "urn:ietf:params:oauth:grant-type:password")

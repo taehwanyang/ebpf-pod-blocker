@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
 	"time"
 
 	"github.com/cilium/ebpf/ringbuf"
@@ -26,20 +27,33 @@ type dropEvent struct {
 }
 
 const (
-	ConfigKey     uint32 = 0
-	ETHPAll       uint16 = 0x0003
-	Window               = time.Minute
-	MaxCount      uint64 = 100
-	LocalNodeName        = "lima-ubuntu-ebpf"
+	Bridge              = "cni0"
+	ConfigKey    uint32 = 0
+	ETHPAll      uint16 = 0x0003
+	Window              = 30 * time.Second
+	MaxCount     uint64 = 10
+	FilterHandle uint32 = 0x00010001
 )
 
 func WatchPodTrafficAndBlockPodOnDetection(ctx context.Context) error {
+	if os.Geteuid() != 0 {
+		return fmt.Errorf("must run as root")
+	}
+
 	if err := rlimit.RemoveMemlock(); err != nil {
 		return fmt.Errorf("remove memlock: %w", err)
 	}
 
+	iface, err := net.InterfaceByName(Bridge)
+	if err != nil {
+		return fmt.Errorf("find interface %q: %w", Bridge, err)
+	}
+
 	var agent Agent
 	agent.watchSet = make(map[uint32]struct{})
+	agent.ifIndex = uint32(iface.Index)
+	agent.ifName = iface.Name
+	agent.tcHandle = FilterHandle
 
 	if err := loadConnection_counterObjects(&agent.objs, nil); err != nil {
 		return fmt.Errorf("load eBPF objects: %w", err)
@@ -53,9 +67,14 @@ func WatchPodTrafficAndBlockPodOnDetection(ctx context.Context) error {
 	agent.tcClient = tcClient
 	defer agent.tcClient.Close()
 
-	if err := agent.applyRateLimitConfig(Window, MaxCount); err != nil {
-		return err
+	if err := ensureClsact(agent.tcClient, agent.ifIndex); err != nil {
+		return fmt.Errorf("ensure clsact on %s: %w", agent.ifName, err)
 	}
+
+	if err := agent.applyRateLimitConfig(Window, MaxCount); err != nil {
+		return fmt.Errorf("apply rate limit config: %w", err)
+	}
+	log.Printf("put rate limit config into eBPF map")
 
 	pods := PodsByLabel()
 	if len(pods) == 0 {
@@ -63,66 +82,39 @@ func WatchPodTrafficAndBlockPodOnDetection(ctx context.Context) error {
 	}
 
 	podIPs := PodIPsFromInfos(pods)
+	if len(podIPs) == 0 {
+		return fmt.Errorf("pods found but no pod IPs for selector %q in namespace %q", LabelSelector, Namespace)
+	}
+
+	log.Printf("pods of %s in namespace %s are: %v", LabelSelector, Namespace, podIPs)
+
 	if err := agent.setWatchIPs(podIPs); err != nil {
-		return err
+		return fmt.Errorf("set watch IPs: %w", err)
 	}
 
-	vethInfos, err := FindHostVethsForPods(ctx, pods, LocalNodeName)
-	if err != nil {
-		return fmt.Errorf("find host-side veths: %w", err)
-	}
-	if len(vethInfos) == 0 {
-		return fmt.Errorf("no host-side veth found for selector %q on node %q", LabelSelector, LocalNodeName)
-	}
+	_ = deleteBPFProgram(agent.tcClient, agent.ifIndex, FilterHandle)
 
-	for i, info := range vethInfos {
-		iface, err := net.InterfaceByName(info.VethName)
-		if err != nil {
-			return fmt.Errorf("find interface %q for pod %s/%s: %w", info.VethName, info.Namespace, info.PodName, err)
-		}
-
-		ifindex := uint32(iface.Index)
-
-		if err := ensureClsact(agent.tcClient, ifindex); err != nil {
-			return fmt.Errorf("ensure clsact on %s: %w", info.VethName, err)
-		}
-
-		filterHandle := uint32(i + 1)
-
-		if err := attachBPFProgram(
-			agent.tcClient,
-			ifindex,
-			agent.objs.CountSynAndDrop.FD(),
-			"count_syn_and_drop",
-			filterHandle,
-		); err != nil {
-			return fmt.Errorf("attach tc bpf to %s: %w", info.VethName, err)
-		}
-
-		agent.attachments = append(agent.attachments, AttachedInterface{
-			IfIndex:      ifindex,
-			FilterHandle: filterHandle,
-			IfName:       info.VethName,
-			PodName:      info.PodName,
-			PodIP:        info.PodIP,
-		})
+	if err := attachBPFProgram(
+		agent.tcClient,
+		agent.ifIndex,
+		agent.objs.CountSynAndDrop.FD(),
+		"count_syn_and_drop",
+		agent.tcHandle,
+	); err != nil {
+		return fmt.Errorf("attach tc bpf to %s: %w", agent.ifName, err)
 	}
 
 	defer func() {
-		for _, att := range agent.attachments {
-			if err := deleteBPFProgram(agent.tcClient, att.IfIndex, att.FilterHandle); err != nil {
-				log.Printf("delete tc filter failed: if=%s ifindex=%d: %v", att.IfName, att.IfIndex, err)
-			}
+		if err := deleteBPFProgram(agent.tcClient, agent.ifIndex, agent.tcHandle); err != nil {
+			log.Printf("delete tc filter failed: if=%s ifindex=%d: %v", agent.ifName, agent.ifIndex, err)
 		}
 	}()
 
 	log.Printf("rate-limit config applied: window=%s max_count=%d", Window, MaxCount)
-	log.Printf("watching pod selector=%q pod_ips=%v", LabelSelector, podIPs)
-
-	for _, att := range agent.attachments {
-		log.Printf("attached tc ingress program: pod=%s podIP=%s hostVeth=%s ifindex=%d",
-			att.PodName, att.PodIP, att.IfName, att.IfIndex)
-	}
+	log.Printf("watching pod selector=%q pod_ips=%v on bridge=%s ifindex=%d",
+		LabelSelector, podIPs, agent.ifName, agent.ifIndex)
+	log.Printf("attached tc ingress program: if=%s ifindex=%d",
+		agent.ifName, agent.ifIndex)
 
 	reader, err := ringbuf.NewReader(agent.objs.DropEvents)
 	if err != nil {
@@ -143,7 +135,10 @@ func runDropEventLoop(ctx context.Context, reader *ringbuf.Reader) error {
 		record, err := reader.Read()
 		if err != nil {
 			if errors.Is(err, ringbuf.ErrClosed) {
-				return ctx.Err()
+				if ctx.Err() != nil {
+					return nil
+				}
+				return nil
 			}
 			return fmt.Errorf("read ringbuf: %w", err)
 		}
@@ -191,23 +186,28 @@ func ensureClsact(tcnl *tc.Tc, ifindex uint32) error {
 	}
 
 	err := tcnl.Qdisc().Add(&qdisc)
-	if err != nil {
+	if err == nil {
 		return nil
 	}
-	return nil
+
+	if errors.Is(err, unix.EEXIST) {
+		return nil
+	}
+
+	return err
 }
 
 func attachBPFProgram(tcnl *tc.Tc, ifindex uint32, progFD int, progName string, handle uint32) error {
 	fd := uint32(progFD)
-	flags := uint32(0x1) // TCA_BPF_FLAG_ACT_DIRECT
+	flags := uint32(0x1) // direct-action
 
 	filter := tc.Object{
 		Msg: tc.Msg{
 			Family:  unix.AF_UNSPEC,
 			Ifindex: ifindex,
-			Parent:  tc.HandleMinIngress,
 			Handle:  handle,
-			Info:    core.FilterInfo(0, ETHPAll),
+			Parent:  core.BuildHandle(tc.HandleRoot, tc.HandleMinIngress),
+			Info:    core.FilterInfo(0, unix.ETH_P_ALL),
 		},
 		Attribute: tc.Attribute{
 			Kind: "bpf",
@@ -218,7 +218,6 @@ func attachBPFProgram(tcnl *tc.Tc, ifindex uint32, progFD int, progName string, 
 			},
 		},
 	}
-
 	return tcnl.Filter().Add(&filter)
 }
 
@@ -227,11 +226,10 @@ func deleteBPFProgram(tcnl *tc.Tc, ifindex uint32, handle uint32) error {
 		Msg: tc.Msg{
 			Family:  unix.AF_UNSPEC,
 			Ifindex: ifindex,
-			Parent:  tc.HandleMinIngress,
 			Handle:  handle,
-			Info:    core.FilterInfo(0, ETHPAll),
+			Parent:  core.BuildHandle(tc.HandleRoot, tc.HandleMinIngress),
+			Info:    core.FilterInfo(0, unix.ETH_P_ALL),
 		},
 	}
-
 	return tcnl.Filter().Delete(&filter)
 }

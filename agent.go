@@ -7,19 +7,13 @@ import (
 	"github.com/florianl/go-tc"
 )
 
-type AttachedInterface struct {
-	IfIndex      uint32
-	FilterHandle uint32
-	IfName       string
-	PodName      string
-	PodIP        string
-}
-
 type Agent struct {
-	objs        connection_counterObjects
-	tcClient    *tc.Tc
-	watchSet    map[uint32]struct{}
-	attachments []AttachedInterface
+	objs     connection_counterObjects
+	tcClient *tc.Tc
+	watchSet map[uint32]struct{}
+	ifIndex  uint32
+	ifName   string
+	tcHandle uint32
 }
 
 func (a *Agent) applyRateLimitConfig(window time.Duration, maxCount uint64) error {
