@@ -14,38 +14,51 @@ const (
 	LabelSelector = "app=authorization-server"
 )
 
-func PodIpsByLabel() []string {
+type PodInfo struct {
+	Namespace string
+	Name      string
+	UID       string
+	PodIP     string
+	NodeName  string
+}
+
+func PodsByLabel() []PodInfo {
 	clientset, err := GetKubeClient()
 	if err != nil {
 		log.Fatalf("Failed to create kubernetes client: %v", err)
 	}
-	ips, err := getPodIPsByLabel(context.Background(), clientset, Namespace, LabelSelector)
+	pods, err := getPodsByLabel(context.Background(), clientset, Namespace, LabelSelector)
 	if err != nil {
-		log.Fatalf("Failed to get pod IPs: %v", err)
+		log.Fatalf("Failed to get pods: %v", err)
 	}
 	log.Printf("Pods matching selector %q in namespace %q:\n", LabelSelector, Namespace)
-	for _, ip := range ips {
-		log.Println(ip)
+	for _, pod := range pods {
+		log.Printf("name=%s ip=%s node=%s uid=%s", pod.Name, pod.PodIP, pod.NodeName, pod.UID)
 	}
 
-	return ips
+	return pods
 }
 
-func getPodIPsByLabel(ctx context.Context, clientset *kubernetes.Clientset, namespace, labelSelector string) ([]string, error) {
+func getPodsByLabel(ctx context.Context, clientset *kubernetes.Clientset, namespace, labelSelector string) ([]PodInfo, error) {
 	podList, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: labelSelector,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("Failed to list pods: %w", err)
 	}
-
-	ips := make([]string, 0, len(podList.Items))
+	result := make([]PodInfo, 0, len(podList.Items))
 	for _, pod := range podList.Items {
 		if pod.Status.PodIP == "" {
 			continue
 		}
-		ips = append(ips, pod.Status.PodIP)
+		result = append(result, PodInfo{
+			Namespace: pod.Namespace,
+			Name:      pod.Name,
+			UID:       string(pod.UID),
+			PodIP:     pod.Status.PodIP,
+			NodeName:  pod.Spec.NodeName,
+		})
 	}
 
-	return ips, nil
+	return result, nil
 }
