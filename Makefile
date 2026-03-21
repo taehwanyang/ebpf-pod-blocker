@@ -1,5 +1,5 @@
 BINARY_NAME = pod_blocker
-GENERATED_FILES = connection_counter_bpfel.go connection_counter_bpfeb.go connection_counter_bpfel.o connection_counter_bpfeb.o
+GENERATED_FILES = count_conn_and_drop_bpfel.go count_conn_and_drop_bpfeb.go count_conn_and_drop_bpfel.o count_conn_and_drop_bpfeb.o
 
 .PHONY: generate build clean run help
 

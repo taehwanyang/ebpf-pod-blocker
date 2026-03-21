@@ -35,7 +35,7 @@ const (
 	FilterHandle uint32 = 0x00010001
 )
 
-func WatchPodTrafficAndBlockPodOnDetection(ctx context.Context) error {
+func CreateTCHookAndShowDropLog(ctx context.Context) error {
 	if os.Geteuid() != 0 {
 		return fmt.Errorf("must run as root")
 	}
@@ -55,7 +55,7 @@ func WatchPodTrafficAndBlockPodOnDetection(ctx context.Context) error {
 	agent.ifName = iface.Name
 	agent.tcHandle = FilterHandle
 
-	if err := loadConnection_counterObjects(&agent.objs, nil); err != nil {
+	if err := loadCount_conn_and_dropObjects(&agent.objs, nil); err != nil {
 		return fmt.Errorf("load eBPF objects: %w", err)
 	}
 	defer agent.objs.Close()

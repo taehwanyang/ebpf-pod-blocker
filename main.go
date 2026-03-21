@@ -1,4 +1,4 @@
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type ip_pair_key -type rl_config -type rl_state connection_counter connection_counter.c -- -O2 -g -I/usr/include/aarch64-linux-gnu
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type ip_pair_key -type rl_config -type rl_state count_conn_and_drop count_conn_and_drop.c -- -O2 -g -I/usr/include/aarch64-linux-gnu
 
 package main
 
@@ -24,7 +24,7 @@ func main() {
 		cancel()
 	}()
 
-	if err := WatchPodTrafficAndBlockPodOnDetection(ctx); err != nil &&
+	if err := CreateTCHookAndShowDropLog(ctx); err != nil &&
 		!errors.Is(err, context.Canceled) {
 		log.Fatalf("runtime error: %v", err)
 	}

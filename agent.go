@@ -11,7 +11,7 @@ import (
 )
 
 type Agent struct {
-	objs     connection_counterObjects
+	objs     count_conn_and_dropObjects
 	tcClient *tc.Tc
 	watchSet map[uint32]struct{}
 	ifIndex  uint32
@@ -20,7 +20,7 @@ type Agent struct {
 }
 
 func (a *Agent) applyRateLimitConfig(window time.Duration, maxCount uint64) error {
-	val := connection_counterRlConfig{
+	val := count_conn_and_dropRlConfig{
 		WindowNs: uint64(window.Nanoseconds()),
 		MaxCount: maxCount,
 	}

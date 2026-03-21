@@ -1,6 +1,6 @@
-connection_counter_bpfel.go 
-connection_counter_bpfeb.go 
-connection_counter_bpfel.o 
-connection_counter_bpfeb.o
+count_conn_and_drop_bpfel.go 
+count_conn_and_drop_bpfeb.go 
+count_conn_and_drop_bpfel.o 
+count_conn_and_drop_bpfeb.o
 pod_blocker
 attacker/auth-attacker
