@@ -96,3 +96,7 @@ tc qdisc add dev cni0 clsact
 tcpdump -i cni0 'dst host 10.42.0.30 and tcp[tcpflags] & tcp-syn != 0'
 ```
 
+## bpf_printk 커널 모드 로그 출력
+```sh
+cat /sys/kernel/debug/tracing/trace_pipe
+```
