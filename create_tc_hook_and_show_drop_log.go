@@ -27,7 +27,6 @@ type dropEvent struct {
 }
 
 const (
-	Bridge              = "cni0"
 	ConfigKey    uint32 = 0
 	ETHPAll      uint16 = 0x0003
 	Window              = 30 * time.Second
@@ -44,9 +43,19 @@ func CreateTCHookAndShowDropLog(ctx context.Context) error {
 		return fmt.Errorf("remove memlock: %w", err)
 	}
 
-	iface, err := net.InterfaceByName(Bridge)
+	pods := PodsByLabel()
+	if len(pods) == 0 {
+		return fmt.Errorf("no pods found for selector %q in namespace %q", LabelSelector, Namespace)
+	}
+
+	hostVeth, err := hostVethFromPod(pods)
 	if err != nil {
-		return fmt.Errorf("find interface %q: %w", Bridge, err)
+		return fmt.Errorf("host veth name from pod %s: %w", pods[0].Name, err)
+	}
+
+	iface, err := net.InterfaceByName(hostVeth)
+	if err != nil {
+		return fmt.Errorf("find interface %s: %w", hostVeth, err)
 	}
 
 	var agent Agent
@@ -75,11 +84,6 @@ func CreateTCHookAndShowDropLog(ctx context.Context) error {
 		return fmt.Errorf("apply rate limit config: %w", err)
 	}
 	log.Printf("put rate limit config into eBPF map")
-
-	pods := PodsByLabel()
-	if len(pods) == 0 {
-		return fmt.Errorf("no pods found for selector %q in namespace %q", LabelSelector, Namespace)
-	}
 
 	podIPs := PodIPsFromInfos(pods)
 	if len(podIPs) == 0 {
@@ -111,7 +115,7 @@ func CreateTCHookAndShowDropLog(ctx context.Context) error {
 	}()
 
 	log.Printf("rate-limit config applied: window=%s max_count=%d", Window, MaxCount)
-	log.Printf("watching pod selector=%q pod_ips=%v on bridge=%s ifindex=%d",
+	log.Printf("watching pod selector=%q pod_ips=%v on host veth=%s ifindex=%d",
 		LabelSelector, podIPs, agent.ifName, agent.ifIndex)
 	log.Printf("attached tc egress program: if=%s ifindex=%d",
 		agent.ifName, agent.ifIndex)
