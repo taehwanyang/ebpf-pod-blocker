@@ -104,3 +104,8 @@ tcpdump -i cni0 'dst host 10.42.0.30 and tcp[tcpflags] & tcp-syn != 0'
 ```sh
 cat /sys/kernel/debug/tracing/trace_pipe
 ```
+
+## 파드 안에서 인터페이스 ifindex 확인
+```sh
+kubectl exec auth-test-authorization-server-7ddc9bcc8d-kqd87 -- cat /sys/class/net/eth0/iflink
+```

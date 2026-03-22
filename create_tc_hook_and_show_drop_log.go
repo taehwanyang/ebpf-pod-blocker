@@ -113,7 +113,7 @@ func CreateTCHookAndShowDropLog(ctx context.Context) error {
 	log.Printf("rate-limit config applied: window=%s max_count=%d", Window, MaxCount)
 	log.Printf("watching pod selector=%q pod_ips=%v on bridge=%s ifindex=%d",
 		LabelSelector, podIPs, agent.ifName, agent.ifIndex)
-	log.Printf("attached tc ingress program: if=%s ifindex=%d",
+	log.Printf("attached tc egress program: if=%s ifindex=%d",
 		agent.ifName, agent.ifIndex)
 
 	reader, err := ringbuf.NewReader(agent.objs.DropEvents)
@@ -230,7 +230,7 @@ func attachBPFProgram(tcnl *tc.Tc, ifindex uint32, progFD int, progName string, 
 			Family:  unix.AF_UNSPEC,
 			Ifindex: ifindex,
 			Handle:  handle,
-			Parent:  core.BuildHandle(tc.HandleRoot, tc.HandleMinIngress),
+			Parent:  core.BuildHandle(tc.HandleRoot, tc.HandleMinEgress),
 			Info:    core.FilterInfo(0, unix.ETH_P_ALL),
 		},
 		Attribute: tc.Attribute{
@@ -251,7 +251,7 @@ func deleteBPFProgram(tcnl *tc.Tc, ifindex uint32, handle uint32) error {
 			Family:  unix.AF_UNSPEC,
 			Ifindex: ifindex,
 			Handle:  handle,
-			Parent:  core.BuildHandle(tc.HandleRoot, tc.HandleMinIngress),
+			Parent:  core.BuildHandle(tc.HandleRoot, tc.HandleMinEgress),
 			Info:    core.FilterInfo(0, unix.ETH_P_ALL),
 		},
 	}
