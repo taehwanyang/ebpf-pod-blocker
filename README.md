@@ -90,14 +90,14 @@ kubectl apply -f attacker-pod.yaml
 
 ## tc 명령어
 ```sh
-tc filter show dev cni0 ingress
-tc qdisc del dev cni0 clsact
-tc qdisc add dev cni0 clsact
+tc filter show dev veth54c1b554 egress
+tc qdisc del dev veth54c1b554 clsact
+tc qdisc add dev veth54c1b554 clsact
 ```
 
 ## tcpdump
 ```sh
-tcpdump -i cni0 'dst host 10.42.0.30 and tcp[tcpflags] & tcp-syn != 0'
+tcpdump -i veth54c1b554 'dst host 10.42.0.30 and tcp[tcpflags] & tcp-syn != 0'
 ```
 
 ## bpf_printk 커널 모드 로그 출력
