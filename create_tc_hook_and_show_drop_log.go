@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net"
 	"os"
 	"time"
 
@@ -54,20 +53,15 @@ func CreateTCHookAndShowDropLog(ctx context.Context) error {
 
 	targetPod := pods[0]
 
-	hostVeth, err := hostVethFromPod(ctx, targetPod)
+	hostVethIface, err := hostVethFromPod(ctx, targetPod)
 	if err != nil {
-		return fmt.Errorf("host veth name from pod %s: %w", pods[0].Name, err)
-	}
-
-	iface, err := net.InterfaceByName(hostVeth)
-	if err != nil {
-		return fmt.Errorf("find interface %s: %w", hostVeth, err)
+		return fmt.Errorf("find host veth interface %s from pod %s: %w", hostVethIface.Name, targetPod.Name, err)
 	}
 
 	var agent Agent
 	agent.watchSet = make(map[uint32]struct{})
-	agent.ifIndex = uint32(iface.Index)
-	agent.ifName = iface.Name
+	agent.ifIndex = uint32(hostVethIface.Index)
+	agent.ifName = hostVethIface.Name
 	agent.tcHandle = FilterHandle
 
 	if err := loadCount_conn_and_dropObjects(&agent.objs, nil); err != nil {

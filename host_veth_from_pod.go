@@ -14,20 +14,20 @@ import (
 	"k8s.io/client-go/tools/remotecommand"
 )
 
-func hostVethFromPod(ctx context.Context, pod PodInfo) (string, error) {
+func hostVethFromPod(ctx context.Context, pod PodInfo) (*net.Interface, error) {
 	hostVethIfIndex, err := getPodIfLinkIndex(ctx, pod)
 	if err != nil {
-		return "", fmt.Errorf("Failed to get host veth interface index from pod %s/%s : %w", pod.Namespace, pod.Name, err)
+		return nil, fmt.Errorf("Failed to get host veth interface index from pod %s/%s : %w", pod.Namespace, pod.Name, err)
 	}
 
 	iface, err := net.InterfaceByIndex(hostVethIfIndex)
 	if err != nil {
-		return "", fmt.Errorf("find host interface by ifindex=%d: %w", hostVethIfIndex, err)
+		return nil, fmt.Errorf("find host interface by ifindex=%d: %w", hostVethIfIndex, err)
 	}
 
 	log.Printf("host veth interface name [%s] from pod[%s/%s]", iface.Name, pod.Namespace, pod.Name)
 
-	return iface.Name, nil
+	return iface, nil
 }
 
 func getPodIfLinkIndex(ctx context.Context, pod PodInfo) (int, error) {
