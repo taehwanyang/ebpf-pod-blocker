@@ -15,7 +15,8 @@
 git clone --recurse-submodules https://github.com/taehwanyang/ebpf-pod-blocker.git
 ```
 
-## K3S 개발환경 및 애플리케이션 배포
+## K3S 개발환경
+
 ### Lima VM 설치
   - Mac을 사용하는 개발자의 경우, 개발 환경은 lima를 통해 구축합니다. lima를 설치하고 아래 명령을 실행합니다.
 ```sh
@@ -37,9 +38,32 @@ sudo chown $(id -u):$(id -g) ~/.kube/config
 export KUBECONFIG=~/.kube/config
 ```
 
+## eBPF 개발환경
+
+### bpftool 설치
+```sh
+git clone --recurse-submodules https://github.com/libbpf/bpftool.git
+cd bpftool/src 
+make install 
+```
+
+### bpf2go 설치
+```sh
+go install github.com/cilium/ebpf/cmd/bpf2go@latest
+echo 'export PATH="$HOME/go/bin:$PATH"' >> /root/.bashrc
+```
+
+### vmlinux.h 추가
+```sh
+bpftool btf dump file /sys/kernel/btf/vmlinux format c > vmlinux.h
+```
+
+## 애플리케이션 배포
+
 ### authorization server & resource server image 명령어 모음
   - docker로 이미지를 만든 후 tar 파일로 압축합니다.
   - lima vm에서 이 파일을 이미지로 로드합니다.
+
 ```sh
 # 도커 이미지 tar로 압축
 docker save -o authorization-server.tar ythwork/authorization-server:0.0.1
@@ -64,25 +88,6 @@ cd helm-auth-servers
 helm install auth-test . -n auth --create-namespace
 ```
 
-## eBPF 개발환경 
-### bpftool 설치
-```sh
-git clone --recurse-submodules https://github.com/libbpf/bpftool.git
-cd bpftool/src 
-make install 
-```
-
-### bpf2go 설치
-```sh
-go install github.com/cilium/ebpf/cmd/bpf2go@latest
-echo 'export PATH="$HOME/go/bin:$PATH"' >> /root/.bashrc
-```
-
-### vmlinux.h 추가
-```sh
-bpftool btf dump file /sys/kernel/btf/vmlinux format c > vmlinux.h
-```
-
 ## tc 명령어
 ```sh
 tc filter show dev veth54c1b554 egress
@@ -105,13 +110,15 @@ cat /sys/kernel/debug/tracing/trace_pipe
 kubectl exec auth-test-authorization-server-7ddc9bcc8d-kqd87 -- cat /sys/class/net/eth0/iflink
 ```
 
-## attacker 파드 실행
+## pod blocker 테스트
+
+### attacker 파드 실행
 ```sh
 cd attacker
 kubectl apply -f attacker-pod.yaml
 ```
 
-## pod blocker DaemonSet 실행
+### pod blocker DaemonSet 실행
 ```sh
 kubectl apply -f pod-blocker-daemonset.yaml
 ```
