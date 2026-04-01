@@ -2,76 +2,83 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"log"
-	"os/exec"
-	"regexp"
+	"net"
 	"strconv"
 	"strings"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/remotecommand"
 )
 
-func hostVethFromPod(pods []PodInfo) (string, error) {
-	podName := pods[0].Name
-	hostVethIfIndex, err := getPodIfLinkIndex(podName)
+func hostVethFromPod(ctx context.Context, pod PodInfo) (string, error) {
+	hostVethIfIndex, err := getPodIfLinkIndex(ctx, pod)
 	if err != nil {
-		return "", fmt.Errorf("Failed to get host veth interface index from pod name: %s: %w", podName, err)
+		return "", fmt.Errorf("Failed to get host veth interface index from pod %s/%s : %w", pod.Namespace, pod.Name, err)
 	}
-	hostVeth, err := getHostVethNameByIfindex(hostVethIfIndex)
-	if err != nil {
-		return "", fmt.Errorf("Failed to get host veth interface name from interface index: %d: %w", hostVethIfIndex, err)
-	}
-	log.Printf("host veth interface name [%s] from pod[%s]\n", hostVeth, podName)
 
-	return hostVeth, nil
+	iface, err := net.InterfaceByIndex(hostVethIfIndex)
+	if err != nil {
+		return "", fmt.Errorf("find host interface by ifindex=%d: %w", hostVethIfIndex, err)
+	}
+
+	log.Printf("host veth interface name [%s] from pod[%s/%s]", iface.Name, pod.Namespace, pod.Name)
+
+	return iface.Name, nil
 }
 
-func getPodIfLinkIndex(podName string) (int, error) {
-	cmd := exec.Command(
-		"kubectl",
-		"exec",
-		podName,
-		"--",
-		"cat",
-		"/sys/class/net/eth0/iflink",
-	)
+func getPodIfLinkIndex(ctx context.Context, pod PodInfo) (int, error) {
+	stdout, stderr, err := podExec(ctx, pod.Namespace, pod.Name, []string{
+		"cat", "/sys/class/net/eth0/iflink",
+	})
+	if err != nil {
+		return 0, fmt.Errorf("exec iflink from pod %s/%s failed: %w, stderr=%s", pod.Namespace, pod.Name, err, stderr)
+	}
+	out := strings.TrimSpace(stdout)
+	ifindex, err := strconv.Atoi(out)
+	if err != nil {
+		return 0, fmt.Errorf("parse iflink %q from pod %s/%s: %w", out, pod.Namespace, pod.Name, err)
+	}
+
+	return ifindex, nil
+}
+
+func podExec(ctx context.Context, namespace, podName string, command []string) (string, string, error) {
+	clientset, restCfg, err := GetKubeClient()
+	if err != nil {
+		return "", "", err
+	}
+
+	req := clientset.CoreV1().RESTClient().
+		Post().
+		Resource("pods").
+		Name(podName).
+		Namespace(namespace).
+		SubResource("exec")
+
+	req.VersionedParams(&corev1.PodExecOptions{
+		Command: command,
+		Stdin:   false,
+		Stdout:  true,
+		Stderr:  true,
+		TTY:     false,
+	}, scheme.ParameterCodec)
+
+	exec, err := remotecommand.NewSPDYExecutor(restCfg, "POST", req.URL())
+	if err != nil {
+		return "", "", fmt.Errorf("new spdy executor: %w", err)
+	}
 
 	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		return 0, fmt.Errorf("kubectl exec failed: %w, stderr=%s", err, stderr.String())
+	if err := exec.StreamWithContext(ctx, remotecommand.StreamOptions{
+		Stdout: &stdout,
+		Stderr: &stderr,
+	}); err != nil {
+		return "", stderr.String(), fmt.Errorf("remote exec stream: %w", err)
 	}
 
-	out := strings.TrimSpace(stdout.String())
-	return strconv.Atoi(out)
-}
-
-func getHostVethNameByIfindex(ifindex int) (string, error) {
-	cmd := exec.Command("ip", "link")
-
-	var stdout bytes.Buffer
-	cmd.Stdout = &stdout
-
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("ip link failed: %w", err)
-	}
-
-	lines := strings.Split(stdout.String(), "\n")
-
-	re := regexp.MustCompile(`^\s*(\d+):\s+([^:@]+)(?:@[^:]+)?:`)
-
-	for _, line := range lines {
-		matches := re.FindStringSubmatch(line)
-		if len(matches) != 3 {
-			continue
-		}
-
-		idx, _ := strconv.Atoi(matches[1])
-		if idx == ifindex {
-			return matches[2], nil
-		}
-	}
-
-	return "", fmt.Errorf("interface not found for ifindex %d", ifindex)
+	return stdout.String(), stderr.String(), nil
 }

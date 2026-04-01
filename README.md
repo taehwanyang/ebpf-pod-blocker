@@ -8,6 +8,7 @@
     - count_conn_and_drop.c
   - 유저모드에서 동작하는 Go 프로그램은 패킷 드롭을 트리거하는 제한 조건을 커널모드로 전달하고 tc hook을 bridge 인터페이스에 추가합니다.
     - create_tc_hook_and_show_drop_log.go
+  - 호스트에서 eBPF 프로그램을 실행해도 되지만 일반적으로 쿠버네티스 클러스터에서는 DaemonSet으로 실행합니다. 이러한 방식은 클라우드 쿠버네티스에도 유효한 전략으로 AKS나 EKS 모두 지원합니다. cilium도 DaemonSet으로 실행됩니다.
 
 ## Clone할 때 주의사항
 ```
@@ -82,12 +83,6 @@ echo 'export PATH="$HOME/go/bin:$PATH"' >> /root/.bashrc
 bpftool btf dump file /sys/kernel/btf/vmlinux format c > vmlinux.h
 ```
 
-## attacker 파드 실행
-```sh
-cd attacker
-kubectl apply -f attacker-pod.yaml
-```
-
 ## tc 명령어
 ```sh
 tc filter show dev veth54c1b554 egress
@@ -108,4 +103,15 @@ cat /sys/kernel/debug/tracing/trace_pipe
 ## 파드 안에서 인터페이스 ifindex 확인
 ```sh
 kubectl exec auth-test-authorization-server-7ddc9bcc8d-kqd87 -- cat /sys/class/net/eth0/iflink
+```
+
+## attacker 파드 실행
+```sh
+cd attacker
+kubectl apply -f attacker-pod.yaml
+```
+
+## pod blocker DaemonSet 실행
+```sh
+kubectl apply -f pod-blocker-daemonset.yaml
 ```

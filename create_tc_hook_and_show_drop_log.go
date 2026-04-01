@@ -43,12 +43,18 @@ func CreateTCHookAndShowDropLog(ctx context.Context) error {
 		return fmt.Errorf("remove memlock: %w", err)
 	}
 
-	pods := PodsByLabel()
+	pods, err := PodsByLabel(ctx)
+	if err != nil {
+		return fmt.Errorf("find pods by label: %w", err)
+	}
+
 	if len(pods) == 0 {
 		return fmt.Errorf("no pods found for selector %q in namespace %q", LabelSelector, Namespace)
 	}
 
-	hostVeth, err := hostVethFromPod(pods)
+	targetPod := pods[0]
+
+	hostVeth, err := hostVethFromPod(ctx, targetPod)
 	if err != nil {
 		return fmt.Errorf("host veth name from pod %s: %w", pods[0].Name, err)
 	}
