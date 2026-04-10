@@ -9,5 +9,5 @@ spec:
   restartPolicy: Never
   containers:
     - name: auth-attacker
-      image: ythwork/auth-attacker:0.0.1
+      image: ythwork/auth-attacker:1.0.0
       imagePullPolicy: IfNotPresent
