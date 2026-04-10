@@ -86,9 +86,7 @@ func sendRequest(client *http.Client) error {
 	tokenURL := "http://auth-test-authorization-server.auth.svc.cluster.local/oauth2/token"
 
 	form := url.Values{}
-	form.Set("grant_type", "urn:ietf:params:oauth:grant-type:password")
-	form.Set("username", "user")
-	form.Set("password", "1234")
+	form.Set("grant_type", "client_credentials")
 	form.Set("scope", "read")
 
 	req, err := http.NewRequest(http.MethodPost, tokenURL, bytes.NewBufferString(form.Encode()))
@@ -100,7 +98,7 @@ func sendRequest(client *http.Client) error {
 	req.Header.Set("Connection", "close")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	basicAuth := base64.StdEncoding.EncodeToString([]byte("client:secret"))
+	basicAuth := base64.StdEncoding.EncodeToString([]byte("client:secret123"))
 	req.Header.Set("Authorization", "Basic "+basicAuth)
 
 	resp, err := client.Do(req)
