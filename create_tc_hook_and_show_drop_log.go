@@ -76,10 +76,6 @@ func CreateTCHookAndShowDropLog(ctx context.Context) error {
 	agent.tcClient = tcClient
 	defer agent.tcClient.Close()
 
-	if err := resetClsact(agent.tcClient, agent.ifIndex); err != nil {
-		return fmt.Errorf("reset clsact on %s: %w", agent.ifName, err)
-	}
-
 	if err := agent.applyRateLimitConfig(Window, MaxCount); err != nil {
 		return fmt.Errorf("apply rate limit config: %w", err)
 	}
@@ -96,7 +92,9 @@ func CreateTCHookAndShowDropLog(ctx context.Context) error {
 		return fmt.Errorf("set watch IPs: %w", err)
 	}
 
-	_ = deleteBPFProgram(agent.tcClient, agent.ifIndex, FilterHandle)
+	if err := ensureClsact(agent.tcClient, agent.ifIndex); err != nil {
+		return fmt.Errorf("ensure clsact on %s: %w", agent.ifName, err)
+	}
 
 	if err := attachBPFProgram(
 		agent.tcClient,
@@ -109,8 +107,9 @@ func CreateTCHookAndShowDropLog(ctx context.Context) error {
 	}
 
 	defer func() {
-		if err := deleteBPFProgram(agent.tcClient, agent.ifIndex, agent.tcHandle); err != nil {
-			log.Printf("delete tc filter failed: if=%s ifindex=%d: %v", agent.ifName, agent.ifIndex, err)
+		if err := deleteClsact(agent.tcClient, agent.ifIndex); err != nil {
+			log.Printf("delete clsact failed: if=%s ifindex=%d: %v",
+				agent.ifName, agent.ifIndex, err)
 		}
 	}()
 
@@ -189,19 +188,13 @@ func ensureClsact(tcnl *tc.Tc, ifindex uint32) error {
 		},
 	}
 
-	err := tcnl.Qdisc().Add(&qdisc)
-	if err == nil {
-		return nil
+	if err := tcnl.Qdisc().Add(&qdisc); err != nil && !errors.Is(err, unix.EEXIST) {
+		return fmt.Errorf("add clsact: %w", err)
 	}
-
-	if errors.Is(err, unix.EEXIST) {
-		return nil
-	}
-
-	return err
+	return nil
 }
 
-func resetClsact(tcnl *tc.Tc, ifindex uint32) error {
+func deleteClsact(tcnl *tc.Tc, ifindex uint32) error {
 	qdisc := tc.Object{
 		Msg: tc.Msg{
 			Family:  unix.AF_UNSPEC,
@@ -214,14 +207,11 @@ func resetClsact(tcnl *tc.Tc, ifindex uint32) error {
 		},
 	}
 
-	if err := tcnl.Qdisc().Delete(&qdisc); err != nil && !errors.Is(err, unix.ENOENT) {
+	if err := tcnl.Qdisc().Delete(&qdisc); err != nil &&
+		!errors.Is(err, unix.ENOENT) &&
+		!errors.Is(err, unix.EINVAL) {
 		return fmt.Errorf("delete clsact: %w", err)
 	}
-
-	if err := tcnl.Qdisc().Add(&qdisc); err != nil && !errors.Is(err, unix.EEXIST) {
-		return fmt.Errorf("add clsact: %w", err)
-	}
-
 	return nil
 }
 

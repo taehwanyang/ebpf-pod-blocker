@@ -57,7 +57,7 @@ spec:
         - operator: Exists
       containers:
         - name: pod-blocker
-          image: ythwork/pod-blocker:0.0.1
+          image: ythwork/pod-blocker:1.0.0
           imagePullPolicy: IfNotPresent
           securityContext:
             privileged: true
