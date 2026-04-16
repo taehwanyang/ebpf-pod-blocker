@@ -1,4 +1,5 @@
 BINARY_NAME = pod_blocker
+MY_NODE_NAME ?= $(shell kubectl get node -o jsonpath='{.items[0].metadata.name}')
 GENERATED_FILES = count_conn_and_drop_bpfel.go count_conn_and_drop_bpfeb.go count_conn_and_drop_bpfel.o count_conn_and_drop_bpfeb.o
 
 .PHONY: generate build clean run help
@@ -10,7 +11,7 @@ build: generate ##  Generate eBPF code and build Go binary
 	go build -buildvcs=false -o $(BINARY_NAME) .
 
 run: build ##  Run the autoscaler program
-	./$(BINARY_NAME)
+	MY_NODE_NAME=$(MY_NODE_NAME) ./$(BINARY_NAME)
 
 clean: ## Remove generated files and binary
 	rm -f $(BINARY_NAME)
